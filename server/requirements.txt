@@ -1,0 +1,12 @@
+fastapi
+uvicorn
+python-multipart
+web3
+imagehash
+Pillow
+python-dotenv
+py-solc-x
+requests
+torch
+transformers
+google-generativeai
