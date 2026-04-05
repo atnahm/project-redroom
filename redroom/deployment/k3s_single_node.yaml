@@ -1,0 +1,368 @@
+---
+# K3s Single Node MVP - Redroom Tier-1 Deepfake Detection
+# Deploy: kubectl apply -f k3s_single_node.yaml
+# Manifests created: namespace, PersistentVolume, PersistentVolumeClaim, Deployment, Service, ConfigMap
+
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: redroom
+  labels:
+    security-level: tier-1
+    classification: redacted
+
+---
+# ConfigMap for application configuration
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: redroom-config
+  namespace: redroom
+data:
+  VLLM_ENDPOINT: "http://vllm:8000"
+  LOG_LEVEL: "INFO"
+  PYTHONUNBUFFERED: "1"
+  PYTHONDONTWRITEBYTECODE: "1"
+
+---
+# PersistentVolume for Merkle Ledger
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: redroom-ledger-pv
+  namespace: redroom
+  labels:
+    tier: storage
+spec:
+  capacity:
+    storage: 100Gi
+  accessModes:
+    - ReadWriteOnce
+  persistentVolumeReclaimPolicy: Retain
+  hostPath:
+    path: /var/redroom/ledger
+    type: DirectoryOrCreate
+
+---
+# PersistentVolumeClaim for Merkle Ledger
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: redroom-ledger-pvc
+  namespace: redroom
+  labels:
+    tier: storage
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 100Gi
+  volumeName: redroom-ledger-pv
+
+---
+# StatefulSet for vLLM (Vision Language Model)
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: redroom-vllm
+  namespace: redroom
+  labels:
+    app: redroom-vllm
+    tier: forensic-reasoning
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: redroom-vllm
+  template:
+    metadata:
+      labels:
+        app: redroom-vllm
+        tier: forensic-reasoning
+    spec:
+      restartPolicy: Always
+      containers:
+      - name: vllm
+        image: vllm/vllm-openai:v0.5.0
+        imagePullPolicy: IfNotPresent
+        ports:
+        - containerPort: 8000
+          name: api
+          protocol: TCP
+        env:
+        - name: CUDA_VISIBLE_DEVICES
+          value: "0"
+        - name: VLLM_ATTENTION
+          value: "flash_attn"
+        - name: GPU_MEMORY_UTILIZATION
+          value: "0.8"
+        resources:
+          requests:
+            memory: "32Gi"
+            cpu: "4000m"
+          limits:
+            memory: "64Gi"
+            cpu: "8000m"
+        livenessProbe:
+          httpGet:
+            path: /v1/models
+            port: 8000
+          initialDelaySeconds: 60
+          periodSeconds: 30
+          timeoutSeconds: 5
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /v1/models
+            port: 8000
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 2
+        volumeMounts:
+        - name: model-cache
+          mountPath: /root/.cache/huggingface
+      volumes:
+      - name: model-cache
+        emptyDir:
+          sizeLimit: 50Gi
+
+---
+# Service for vLLM
+apiVersion: v1
+kind: Service
+metadata:
+  name: vllm
+  namespace: redroom
+  labels:
+    app: redroom-vllm
+spec:
+  type: ClusterIP
+  ports:
+  - port: 8000
+    targetPort: 8000
+    protocol: TCP
+    name: api
+  selector:
+    app: redroom-vllm
+
+---
+# Deployment for Redroom API
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: redroom-api
+  namespace: redroom
+  labels:
+    app: redroom-api
+    tier: orchestration
+spec:
+  replicas: 1
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      app: redroom-api
+  template:
+    metadata:
+      labels:
+        app: redroom-api
+        tier: orchestration
+    spec:
+      restartPolicy: Always
+      containers:
+      - name: api
+        image: redroom:v1.0
+        imagePullPolicy: Never
+        ports:
+        - containerPort: 8002
+          name: api
+          protocol: TCP
+        - containerPort: 8003
+          name: ingestion
+          protocol: TCP
+        env:
+        - name: VLLM_ENDPOINT
+          valueFrom:
+            configMapKeyRef:
+              name: redroom-config
+              key: VLLM_ENDPOINT
+        - name: LEDGER_DB_PATH
+          value: "/var/redroom/ledger/redroom_ledger.db"
+        - name: LOG_LEVEL
+          valueFrom:
+            configMapKeyRef:
+              name: redroom-config
+              key: LOG_LEVEL
+        - name: PYTHONUNBUFFERED
+          valueFrom:
+            configMapKeyRef:
+              name: redroom-config
+              key: PYTHONUNBUFFERED
+        resources:
+          requests:
+            memory: "32Gi"
+            cpu: "4000m"
+          limits:
+            memory: "64Gi"
+            cpu: "8000m"
+        livenessProbe:
+          httpGet:
+            path: /redroom/status
+            port: 8002
+          initialDelaySeconds: 40
+          periodSeconds: 30
+          timeoutSeconds: 10
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /redroom/status
+            port: 8002
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 2
+        volumeMounts:
+        - name: ledger-storage
+          mountPath: /var/redroom/ledger
+        - name: logs
+          mountPath: /app/logs
+        securityContext:
+          runAsNonRoot: true
+          runAsUser: 1000
+          readOnlyRootFilesystem: false
+      volumes:
+      - name: ledger-storage
+        persistentVolumeClaim:
+          claimName: redroom-ledger-pvc
+      - name: logs
+        emptyDir:
+          sizeLimit: 10Gi
+
+---
+# Service for Redroom API - ClusterIP (internal only)
+apiVersion: v1
+kind: Service
+metadata:
+  name: redroom-api
+  namespace: redroom
+  labels:
+    app: redroom-api
+  annotations:
+    description: "Redroom forensic analysis API"
+spec:
+  type: ClusterIP
+  selector:
+    app: redroom-api
+  ports:
+  - port: 8002
+    targetPort: 8002
+    protocol: TCP
+    name: api
+  - port: 8003
+    targetPort: 8003
+    protocol: TCP
+    name: ingestion
+
+---
+# CronJob for ledger maintenance (weekly)
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: redroom-ledger-maintenance
+  namespace: redroom
+spec:
+  schedule: "0 0 * * 0"  # Every Sunday at midnight
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          serviceAccountName: redroom-maintenance
+          containers:
+          - name: vacuum
+            image: sqlite:latest
+            command:
+            - /bin/sh
+            - -c
+            - |
+              sqlite3 /var/redroom/ledger/redroom_ledger.db "VACUUM; ANALYZE;"
+              echo "$(date): Ledger maintenance complete" >> /var/redroom/ledger/maintenance.log
+            volumeMounts:
+            - name: ledger-storage
+              mountPath: /var/redroom/ledger
+          volumes:
+          - name: ledger-storage
+            persistentVolumeClaim:
+              claimName: redroom-ledger-pvc
+          restartPolicy: OnFailure
+
+---
+# ServiceAccount for maintenance jobs
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: redroom-maintenance
+  namespace: redroom
+
+---
+# Role for ledger maintenance
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: redroom-maintenance
+  namespace: redroom
+rules:
+- apiGroups: [""]
+  resources: ["persistentvolumeclaims"]
+  verbs: ["get", "list"]
+
+---
+# RoleBinding for maintenance
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: redroom-maintenance
+  namespace: redroom
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: redroom-maintenance
+subjects:
+- kind: ServiceAccount
+  name: redroom-maintenance
+  namespace: redroom
+
+---
+# NetworkPolicy - Restrict traffic to forensic operations only
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: redroom-network-policy
+  namespace: redroom
+spec:
+  podSelector: {}
+  policyTypes:
+  - Ingress
+  - Egress
+  ingress:
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          name: redroom
+    ports:
+    - protocol: TCP
+      port: 8002
+    - protocol: TCP
+      port: 8003
+  egress:
+  - to:
+    - namespaceSelector:
+        matchLabels:
+          name: redroom
+    ports:
+    - protocol: TCP
+      port: 8000

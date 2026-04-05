@@ -1,0 +1,224 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: redroom
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: redroom-config
+  namespace: redroom
+data:
+  VLLM_ENDPOINT: "http://vllm:8000"
+  LOG_LEVEL: "INFO"
+  PYTHONUNBUFFERED: "1"
+
+---
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: redroom-ledger-pv
+spec:
+  capacity:
+    storage: 100Gi
+  accessModes:
+    - ReadWriteOnce
+  persistentVolumeReclaimPolicy: Retain
+  hostPath:
+    path: /var/redroom/ledger
+    type: DirectoryOrCreate
+
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: redroom-ledger-pvc
+  namespace: redroom
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 100Gi
+  volumeName: redroom-ledger-pv
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: redroom-vllm
+  namespace: redroom
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: redroom-vllm
+  template:
+    metadata:
+      labels:
+        app: redroom-vllm
+    spec:
+      containers:
+      - name: vllm
+        image: vllm/vllm-openai:latest
+        ports:
+        - containerPort: 8000
+        env:
+        - name: CUDA_VISIBLE_DEVICES
+          value: "0"
+        - name: VLLM_ATTENTION
+          value: "flash_attn"
+        - name: GPU_MEMORY_UTILIZATION
+          value: "0.8"
+        resources:
+          requests:
+            memory: "48Gi"
+            cpu: "8"
+            nvidia.com/gpu: "1"
+          limits:
+            memory: "48Gi"
+            cpu: "16"
+            nvidia.com/gpu: "1"
+        livenessProbe:
+          httpGet:
+            path: /v1/models
+            port: 8000
+          initialDelaySeconds: 60
+          periodSeconds: 30
+        volumeMounts:
+        - name: model-cache
+          mountPath: /root/.cache/huggingface
+      volumes:
+      - name: model-cache
+        emptyDir:
+          sizeLimit: 50Gi
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: vllm
+  namespace: redroom
+spec:
+  selector:
+    app: redroom-vllm
+  ports:
+  - port: 8000
+    targetPort: 8000
+  clusterIP: None
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: redroom-api
+  namespace: redroom
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: redroom-api
+  template:
+    metadata:
+      labels:
+        app: redroom-api
+    spec:
+      containers:
+      - name: api
+        image: redroom:latest
+        imagePullPolicy: Always
+        ports:
+        - containerPort: 8002
+        envFrom:
+        - configMapRef:
+            name: redroom-config
+        env:
+        - name: VLLM_ENDPOINT
+          value: "http://vllm:8000"
+        - name: LEDGER_DB_PATH
+          value: "/var/redroom/ledger/redroom_ledger.db"
+        resources:
+          requests:
+            memory: "8Gi"
+            cpu: "4"
+          limits:
+            memory: "16Gi"
+            cpu: "8"
+        livenessProbe:
+          httpGet:
+            path: /redroom/status
+            port: 8002
+          initialDelaySeconds: 40
+          periodSeconds: 30
+        readinessProbe:
+          httpGet:
+            path: /redroom/status
+            port: 8002
+          initialDelaySeconds: 20
+          periodSeconds: 10
+        volumeMounts:
+        - name: ledger
+          mountPath: /var/redroom/ledger
+        - name: logs
+          mountPath: /app/logs
+      volumes:
+      - name: ledger
+        persistentVolumeClaim:
+          claimName: redroom-ledger-pvc
+      - name: logs
+        emptyDir: {}
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            podAffinityTerm:
+              labelSelector:
+                matchExpressions:
+                - key: app
+                  operator: In
+                  values:
+                  - redroom-api
+              topologyKey: kubernetes.io/hostname
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: redroom-api
+  namespace: redroom
+spec:
+  selector:
+    app: redroom-api
+  ports:
+  - name: http
+    port: 8002
+    targetPort: 8002
+  type: LoadBalancer
+
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: redroom-api-hpa
+  namespace: redroom
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: redroom-api
+  minReplicas: 2
+  maxReplicas: 10
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 70
+  - type: Resource
+    resource:
+      name: memory
+      target:
+        type: Utilization
+        averageUtilization: 80

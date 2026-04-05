@@ -1,0 +1,100 @@
+# Docker Compose Configuration for REDROOM Deepfake Detection System
+#
+# Production deployment with vLLM and FastAPI services
+#
+# Usage:
+#   docker-compose up -d
+#   docker-compose logs -f api
+#   docker-compose down
+
+version: '3.9'
+
+services:
+  vllm:
+    image: vllm/vllm-openai:latest
+    container_name: redroom-vllm
+    ports:
+      - "8001:8000"
+    environment:
+      - CUDA_VISIBLE_DEVICES=0
+      - VLLM_ATTENTION=flash_attn
+      - GPU_MEMORY_UTILIZATION=0.8
+    volumes:
+      - vllm_models:/root/.cache/huggingface
+    command: |
+      python -m vllm.entrypoints.openai.api_server \
+        --model Qwen/Qwen2-VL-7B-Instruct \
+        --quantization awq \
+        --dtype float16 \
+        --max-model-len 2048 \
+        --tensor-parallel-size 1 \
+        --gpu-memory-utilization 0.8 \
+        --port 8000 \
+        --host 0.0.0.0
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/v1/models"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    networks:
+      - redroom-net
+    restart: unless-stopped
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    labels:
+      - "redroom.service=vllm"
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: redroom-api
+    ports:
+      - "8002:8002"
+    environment:
+      - PYTHONUNBUFFERED=1
+      - VLLM_ENDPOINT=http://vllm:8000
+      - LEDGER_DB_PATH=/var/redroom/ledger/redroom_ledger.db
+      - LOG_LEVEL=INFO
+      - ENVIRONMENT=production
+    volumes:
+      - redroom_ledger:/var/redroom/ledger
+      - ./data:/app/data
+      - ./logs:/app/logs
+    depends_on:
+      vllm:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8002/redroom/status"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    networks:
+      - redroom-net
+    restart: unless-stopped
+    labels:
+      - "redroom.service=api"
+
+networks:
+  redroom-net:
+    driver: bridge
+
+volumes:
+  vllm_models:
+  redroom_ledger:
+
+networks:
+  redroom-net:
+    driver: bridge
+    driver_opts:
+      com.docker.network.driver.mtu: 1500
+    labels:
+      - "redroom.network=forensic-isolated"
+      - "redroom.isolation=air-gapped"

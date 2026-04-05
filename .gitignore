@@ -1,34 +1,165 @@
-# Dependencies
-node_modules/
+# Python
 __pycache__/
 *.py[cod]
 *$py.class
-venv/
-.venv/
+*.so
+.Python
 env/
+venv/
+ENV/
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+.coverage
 
-# Environment Variables
-.env
-.env.local
+# Virtual environments
+.venv
+pipenv-venv/
 
 # IDEs
 .vscode/
 .idea/
+*.swp
+*.swo
+*~
+.DS_Store
+*.sublime-project
+*.sublime-workspace
+.project
+.pydevproject
+*.iml
 
-# Build Outputs
-dist/
-build/
-artifacts/
+# Testing
+.pytest_cache/
+.tox/
+coverage.xml
+htmlcov/
+.hypothesis/
+
+# Sensitive files
+credentials.json
+wallet_credentials.txt
+*.pem
+*.key
+.env
+.env.local
+.env.*.local
+secrets/
+
+# Build artifacts
+redroom/forensics/cpp/build/
+*.dll
+*.so
+*.dylib
+
+# Evidence and data
+redroom/data/
+redroom/logs/
+redroom/evidence_cache/
+var/redroom/
+
+# Database files
+*.db
+*.sqlite
+*.sqlite3
+ledger.db
+
+# Docker
+.dockerignore
+docker-compose.override.yml
+
+# Kubernetes
+kubeconfig
+kubeconfig-*
+*.pem
 
 # System
 .DS_Store
 Thumbs.db
 
-# Logs
-*.log
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
+# Temporary
+*.tmp
+*.temp
+*.bak
+*~
 
-# Wallet Credentials (IMPORTANT)
+# OS files
+.AppleDouble
+.LSOverride
+
+.coverage
+
+# Documentation
+docs/_build/
+site/
+
+# Environment and config
+.env
+.env.local
+.env.*.local
+
+# Credentials (CRITICAL - NEVER commit)
 wallet_credentials.txt
+*.pem
+*.key
+*.crt
+.aws/
+credentials.json
+token.json
+
+# Large files
+*.log
+*.zip
+*.tar.gz
+*.tar.bz2
+*.7z
+*.mp4
+*.mov
+*.avi
+
+# Runtime data
+redroom_ledger.db
+redroom_ledger-wal
+redroom_ledger-shm
+evidence_cache/
+data/
+logs/
+tmp/
+*.tmp
+
+# Docker
+.docker/
+
+# OS files
+Thumbs.db
+.DS_Store
+
+# Backup files
+*.bak
+*.backup
+
+# Build artifacts
+*.o
+*.obj
+*.exe
+*.dll
+*.so
+*.dylib
+
+# C++ build
+CMakeFiles/
+cmake_install.cmake
+CMakeCache.txt

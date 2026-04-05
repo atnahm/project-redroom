@@ -1,0 +1,427 @@
+---
+# K3s Production HA - 3-Node Cluster with GPU Support
+# Deploy: kubectl apply -f k3s_production.yaml
+# Requirements: 3x nodes with 8-core CPU, 32GB RAM, NVIDIA A100 GPU
+
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: redroom
+  labels:
+    security-level: tier-1
+    classification: redacted
+    environment: production
+
+---
+# ConfigMap for production configuration
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: redroom-config
+  namespace: redroom
+data:
+  VLLM_ENDPOINT: "http://vllm-service:8000"
+  LOG_LEVEL: "INFO"
+  PYTHONUNBUFFERED: "1"
+  ENVIRONMENT: "production"
+  REPLICA_COUNT: "3"
+
+---
+# PersistentVolume for etcd (ledger storage replicated)
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: redroom-ledger-pv-1
+  labels:
+    tier: storage
+    replicate: "true"
+spec:
+  capacity:
+    storage: 100Gi
+  accessModes:
+    - ReadWriteOnce
+  persistentVolumeReclaimPolicy: Retain
+  nodeAffinity:
+    required:
+      nodeSelectorTerms:
+      - matchExpressions:
+        - key: redroom-ledger
+          operator: In
+          values: ["node-1"]
+  hostPath:
+    path: /var/redroom/ledger/node1
+    type: DirectoryOrCreate
+
+---
+# PVC for ledger on node-1
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: redroom-ledger-pvc-1
+  namespace: redroom
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 100Gi
+  volumeName: redroom-ledger-pv-1
+
+---
+# StatefulSet for vLLM with GPU support
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: redroom-vllm
+  namespace: redroom
+  labels:
+    app: redroom-vllm
+    tier: forensic-reasoning
+spec:
+  serviceName: vllm-service
+  replicas: 1  # Single vLLM instance, GPU-optimized
+  selector:
+    matchLabels:
+      app: redroom-vllm
+  template:
+    metadata:
+      labels:
+        app: redroom-vllm
+        tier: forensic-reasoning
+    spec:
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+            - matchExpressions:
+              - key: accelerator
+                operator: In
+                values: ["nvidia-a100"]
+      containers:
+      - name: vllm
+        image: nvcr.io/nvidia/pytorchllm:23.12
+        imagePullPolicy: IfNotPresent
+        ports:
+        - containerPort: 8000
+          name: api
+        env:
+        - name: CUDA_VISIBLE_DEVICES
+          value: "0"
+        - name: VLLM_ATTENTION
+          value: "flash_attn"
+        - name: GPU_MEMORY_UTILIZATION
+          value: "0.9"
+        resources:
+          requests:
+            memory: "32Gi"
+            cpu: "8000m"
+            nvidia.com/gpu: "1"
+          limits:
+            memory: "64Gi"
+            cpu: "16000m"
+            nvidia.com/gpu: "1"
+        livenessProbe:
+          httpGet:
+            path: /v1/models
+            port: 8000
+          initialDelaySeconds: 120
+          periodSeconds: 30
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /v1/models
+            port: 8000
+          initialDelaySeconds: 60
+          periodSeconds: 10
+          failureThreshold: 2
+        volumeMounts:
+        - name: model-cache
+          mountPath: /root/.cache/huggingface
+      volumes:
+      - name: model-cache
+        emptyDir:
+          sizeLimit: 50Gi
+
+---
+# Service for vLLM
+apiVersion: v1
+kind: Service
+metadata:
+  name: vllm-service
+  namespace: redroom
+spec:
+  type: ClusterIP
+  clusterIP: None  # Headless service for StatefulSet
+  selector:
+    app: redroom-vllm
+  ports:
+  - port: 8000
+    targetPort: 8000
+    name: api
+
+---
+# Deployment for Redroom API (3 replicas)
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: redroom-api
+  namespace: redroom
+  labels:
+    app: redroom-api
+    tier: orchestration
+spec:
+  replicas: 3  # High availability
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      app: redroom-api
+  template:
+    metadata:
+      labels:
+        app: redroom-api
+        tier: orchestration
+    spec:
+      affinity:
+        # Pod anti-affinity to spread across nodes
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            podAffinityTerm:
+              labelSelector:
+                matchExpressions:
+                - key: app
+                  operator: In
+                  values:
+                  - redroom-api
+              topologyKey: kubernetes.io/hostname
+        # Node affinity for CPU nodes (non-GPU)
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+            - matchExpressions:
+              - key: node-role.kubernetes.io/worker
+                operator: Exists
+      containers:
+      - name: api
+        image: redroom:v1.0-prod
+        imagePullPolicy: IfNotPresent
+        ports:
+        - containerPort: 8002
+          name: api
+        - containerPort: 8003
+          name: ingestion
+        env:
+        - name: VLLM_ENDPOINT
+          valueFrom:
+            configMapKeyRef:
+              name: redroom-config
+              key: VLLM_ENDPOINT
+        - name: LEDGER_DB_PATH
+          value: "/var/redroom/ledger/redroom_ledger.db"
+        - name: ENVIRONMENT
+          valueFrom:
+            configMapKeyRef:
+              name: redroom-config
+              key: ENVIRONMENT
+        resources:
+          requests:
+            memory: "16Gi"
+            cpu: "4000m"
+          limits:
+            memory: "32Gi"
+            cpu: "8000m"
+        livenessProbe:
+          httpGet:
+            path: /redroom/status
+            port: 8002
+          initialDelaySeconds: 40
+          periodSeconds: 30
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /redroom/status
+            port: 8002
+          initialDelaySeconds: 20
+          periodSeconds: 10
+          failureThreshold: 2
+        volumeMounts:
+        - name: ledger-storage
+          mountPath: /var/redroom/ledger
+        - name: logs
+          mountPath: /app/logs
+      volumes:
+      - name: ledger-storage
+        persistentVolumeClaim:
+          claimName: redroom-ledger-pvc-1
+      - name: logs
+        emptyDir:
+          sizeLimit: 10Gi
+
+---
+# Service for API - LoadBalancer for external access
+apiVersion: v1
+kind: Service
+metadata:
+  name: redroom-api
+  namespace: redroom
+  labels:
+    app: redroom-api
+spec:
+  type: LoadBalancer
+  selector:
+    app: redroom-api
+  ports:
+  - port: 8002
+    targetPort: 8002
+    protocol: TCP
+    name: api
+  - port: 8003
+    targetPort: 8003
+    protocol: TCP
+    name: ingestion
+  sessionAffinity: ClientIP  # Pin analyst to same API pod
+
+---
+# HorizontalPodAutoscaler for API
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: redroom-api-hpa
+  namespace: redroom
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: redroom-api
+  minReplicas: 3
+  maxReplicas: 9
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 70
+  - type: Resource
+    resource:
+      name: memory
+      target:
+        type: Utilization
+        averageUtilization: 80
+
+---
+# PodDisruptionBudget for high availability
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: redroom-api-pdb
+  namespace: redroom
+spec:
+  minAvailable: 2
+  selector:
+    matchLabels:
+      app: redroom-api
+
+---
+# NetworkPolicy for production security
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: redroom-network-policy
+  namespace: redroom
+spec:
+  podSelector: {}
+  policyTypes:
+  - Ingress
+  - Egress
+  ingress:
+  # Allow from LoadBalancer/Ingress
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          name: ingress-nginx
+    ports:
+    - protocol: TCP
+      port: 8002
+    - protocol: TCP
+      port: 8003
+  # Internal communication
+  - from:
+    - podSelector: {}
+    ports:
+    - protocol: TCP
+      port: 8000
+    - protocol: TCP
+      port: 8002
+  egress:
+  # To vLLM
+  - to:
+    - podSelector:
+        matchLabels:
+          app: redroom-vllm
+    ports:
+    - protocol: TCP
+      port: 8000
+  # DNS
+  - to:
+    - namespaceSelector: {}
+    ports:
+    - protocol: UDP
+      port: 53
+
+---
+# ServiceMonitor for Prometheus (if using)
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: redroom-api
+  namespace: redroom
+spec:
+  selector:
+    matchLabels:
+      app: redroom-api
+  endpoints:
+  - port: api
+    interval: 30s
+    path: /metrics
+
+---
+# CronJob for ledger backups
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: redroom-ledger-backup
+  namespace: redroom
+spec:
+  schedule: "0 2 * * *"  # Daily at 2 AM
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          containers:
+          - name: backup
+            image: redroom:v1.0-prod
+            command:
+            - /bin/bash
+            - -c
+            - |
+              mkdir -p /backup
+              cp /var/redroom/ledger/redroom_ledger.db /backup/redroom_ledger_$(date +%Y%m%d_%H%M%S).db
+              echo "Backup completed at $(date)" >> /var/redroom/ledger/backup.log
+            volumeMounts:
+            - name: ledger-storage
+              mountPath: /var/redroom/ledger
+            - name: backup-storage
+              mountPath: /backup
+          volumes:
+          - name: ledger-storage
+            persistentVolumeClaim:
+              claimName: redroom-ledger-pvc-1
+          - name: backup-storage
+            emptyDir:
+              sizeLimit: 100Gi
+          restartPolicy: OnFailure
