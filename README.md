@@ -1,6 +1,17 @@
-# REDROOM - Deepfake Detection System
+# REDROOM - Open Source Deepfake Detection System
 
-A Miltary-grade video forensic analysis system for detecting AI-generated deepfakes through multi-modal forensic analysis, cryptographic chain-of-custody, and local sovereign reasoning.
+[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](https://opensource.org/licenses/MIT)
+[![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
+[![Docker Ready](https://img.shields.io/badge/Docker-Ready-2496ED.svg)](https://www.docker.com/)
+[![Kubernetes Ready](https://img.shields.io/badge/Kubernetes-Ready-326CE5.svg)](https://kubernetes.io/)
+[![GitHub Stars](https://img.shields.io/github/stars/atnahm/redroom?style=flat-square)](https://github.com/atnahm/redroom)
+[![GitHub Issues](https://img.shields.io/github/issues/atnahm/redroom?style=flat-square)](https://github.com/atnahm/redroom/issues)
+[![Version 1.0](https://img.shields.io/badge/Version-1.0-blue.svg)](https://github.com/atnahm/redroom/releases)
+[![Code of Conduct](https://img.shields.io/badge/Contributor%20Covenant-2.1-4baadc.svg)](CODE_OF_CONDUCT.md)
+
+Professional-grade video forensic analysis system for detecting AI-generated deepfakes through multi-modal forensic analysis, cryptographic chain-of-custody, and local sovereign reasoning.
+
+**Open Source | Production Ready | Actively Maintained**
 
 ## System Overview
 
@@ -352,19 +363,71 @@ Large ledger queries (>100k records) may require pagination:
 GET /redroom/ledger/query?limit=1000&offset=0
 ```
 
+## Contributing
+
+We welcome contributions of all kinds! Before getting started:
+
+1. Read [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines
+2. Review [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md)
+3. Check [INSTALL.md](INSTALL.md) for development setup
+4. Look for issues labeled "good first issue" or "help wanted"
+
+### Ways to Contribute
+
+- Report bugs and request features via [GitHub Issues](https://github.com/atnahm/redroom/issues)
+- Submit code improvements via [Pull Requests](https://github.com/atnahm/redroom/pulls)
+- Improve documentation
+- Submit security vulnerabilities to [SECURITY.md](SECURITY.md)
+- Share your deployment experiences
+- Help others with questions in [Discussions](https://github.com/atnahm/redroom/discussions)
+
+## Community
+
+- **Issues**: Report bugs, suggest features - [GitHub Issues](https://github.com/atnahm/redroom/issues)
+- **Discussions**: Ask questions, discuss ideas - [GitHub Discussions](https://github.com/atnahm/redroom/discussions)
+- **Security**: Report vulnerabilities - [SECURITY.md](SECURITY.md)
+- **Roadmap**: See what's planned - [ROADMAP.md](ROADMAP.md)
+- **Contributors**: Thank you! - [CONTRIBUTORS.md](CONTRIBUTORS.md)
+
 ## Support
 
 For issues, questions, or deployment help:
-1. Check configuration in `redroom/config.py`
-2. Review logs: `docker logs redroom-api` or `kubectl logs`
-3. Verify dependencies: `python -c "import cv2, fastapi, sqlalchemy"`
+1. Check [INSTALL.md](INSTALL.md) for setup instructions
+2. Review [DEPLOYMENT.md](DEPLOYMENT.md) for deployment
+3. Check configuration in `redroom/config.py`
+4. Review logs: `docker logs redroom-api` or `kubectl logs`
+5. Verify dependencies: `python -c "import cv2, fastapi, sqlalchemy"`
+6. Open a GitHub Issue for help
 
 ## License
 
-Refer to [LICENSE](LICENSE) file.
+Refer to [LICENSE](LICENSE) file. REDROOM is released under the MIT License.
+
+## Acknowledgments
+
+See [CONTRIBUTORS.md](CONTRIBUTORS.md) for recognition of everyone who makes REDROOM possible.
+
+## Citation
+
+If you use REDROOM in your research or production system, please cite:
+
+```bibtex
+@software{redroom2026,
+  title={REDROOM: Open Source Deepfake Detection System},
+  author={atnahm and contributors},
+  url={https://github.com/atnahm/redroom},
+  year={2026},
+  version={1.0}
+}
+```
 
 ## Version
 
 Current Release: 1.0
-Build Date: 2024-2026
+Build Date: April 2026
 Status: Production Ready
+License: MIT
+
+---
+
+**REDROOM: Collaborative deepfake detection for a more trustworthy world.**

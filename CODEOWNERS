@@ -1,0 +1,37 @@
+# CODEOWNERS file for REDROOM project
+# See https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners
+
+# Core maintainers
+* @atnahm
+
+# Forensic analysis modules
+/redroom/forensics/ @atnahm
+/redroom/forensics/python/ @atnahm
+/redroom/forensics/cpp/ @atnahm
+
+# Ledger and data integrity
+/redroom/ledger/ @atnahm
+
+# Vision language model
+/redroom/vlm/ @atnahm
+
+# Orchestration and API
+/redroom/orchestration/ @atnahm
+/redroom/api/ @atnahm
+
+# Deployment and infrastructure
+/kubernetes/ @atnahm
+/redroom/docker-compose.yml @atnahm
+/redroom/Dockerfile @atnahm
+/.github/workflows/ @atnahm
+
+# Documentation
+/README.md @atnahm
+/DEPLOYMENT.md @atnahm
+/CONTRIBUTING.md @atnahm
+/SECURITY.md @atnahm
+/ARCHITECTURE.md @atnahm
+
+# Configuration
+/redroom/config.py @atnahm
+/redroom/requirements.txt @atnahm
