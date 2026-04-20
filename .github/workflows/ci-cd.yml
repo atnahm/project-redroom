@@ -27,17 +27,16 @@ jobs:
       run: |
         python -m pip install --upgrade pip
         pip install -r redroom/requirements.txt
-        pip install flake8 pytest
+        pip install flake8 pytest pytest-asyncio
 
     - name: Lint Python files
       # Removed || true. If the code is messy, the build fails.
       run: flake8 redroom --count --select=E9,F63,F7,F82 --show-source --statistics
 
     - name: Run integration tests
-      # Removed || true. If tests fail, the pipeline stops here.
       run: |
         cd redroom
-        python -m pytest test_integration.py -v --tb=short
+        python -m pytest test_integration.py -v --tb=short --asyncio-mode=auto
 
   build-and-publish:
     needs: test-and-lint
