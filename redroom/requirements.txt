@@ -6,17 +6,17 @@
 fastapi==0.104.1
 uvicorn[standard]==0.24.0
 pydantic==2.5.0
-python-multipart==0.0.6
+python-multipart==0.0.27
 
 # Computer Vision & Signal Processing
 opencv-contrib-python==4.8.1.78
 numpy==1.24.3
 scipy==1.11.4
-scikit-learn==1.3.2
+scikit-learn==1.5.0
 
 # Cryptography & Security
-cryptography==41.0.7
-pycryptodome==3.19.0
+cryptography==46.0.7
+pycryptodome==3.19.1
 
 # Ledger & Database
 sqlalchemy==2.0.23
@@ -29,11 +29,11 @@ asyncio==3.4.3
 python-json-logger==2.0.7
 
 # VLM Integration
-requests==2.31.0
+requests==2.33.0
 
 # Utilities
-python-dotenv==1.0.0
-tqdm==4.66.1
+python-dotenv==1.2.2
+tqdm==4.66.3
 
 # Development (Optional, comment out for production)
 # pytest==7.4.3
