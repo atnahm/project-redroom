@@ -163,3 +163,6 @@ Thumbs.db
 CMakeFiles/
 cmake_install.cmake
 CMakeCache.txt
+node_modules/
+frontend/node_modules/
+frontend/.next/
